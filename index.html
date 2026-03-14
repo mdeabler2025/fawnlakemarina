@@ -1,1 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fawn Lake Marina — Boat Slip Availability</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --water: #e8f4f8;
+    --navy: #0f2942;
+    --navy-mid: #1a4a6e;
+    --available: #166534;
+    --available-bg: #dcfce7;
+    --available-border: #16a34a;
+    --leased: #991b1b;
+    --leased-bg: #fee2e2;
+    --leased-border: #dc2626;
+    --dock-fixed: #e67c2a;
+    --dock-float: #4ade80;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Source Sans 3', sans-serif; background: var(--water); min-height: 100vh; }
+  header { background: var(--navy); padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  header h1 { font-family: 'Playfair Display', serif; font-size: 22px; color: #fff; letter-spacing: 0.02em; }
+  header p { font-size: 12px; color: #7ec8e3; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+  .last-updated { font-size: 11px; color: #94a3b8; font-style: italic; }
+  .stats-bar { display: flex; background: var(--navy-mid); border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .stat { flex: 1; padding: 12px 20px; text-align: center; border-right: 1px solid rgba(255,255,255,0.07); }
+  .stat:last-child { border-right: none; }
+  .stat-num { font-size: 24px; font-weight: 600; font-family: 'Playfair Display', serif; }
+  .stat-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+  .stat.available .stat-num { color: #4ade80; }
+  .stat.leased .stat-num { color: #f87171; }
+  .stat.total .stat-num { color: #7ec8e3; }
+  .legend { display: flex; gap: 20px; padding: 12px 32px; background: rgba(15,41,66,0.06); border-bottom: 1px solid rgba(15,41,66,0.1); flex-wrap: wrap; align-items: center; }
+  .legend-title { font-size: 11px; font-weight: 600; color: var(--navy); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #374151; }
+  .legend-swatch { width: 16px; height: 16px; border-radius: 3px; border: 1.5px solid; flex-shrink: 0; }
+  .marina-container { padding: 24px 32px 40px; overflow-x: auto; }
+  .marina-title { font-family: 'Playfair Display', serif; font-size: 18px; color: var(--navy); text-align: center; margin-bottom: 4px; }
+  .marina-subtitle { font-size: 11px; color: #6b7280; text-align: center; margin-bottom: 24px; letter-spacing: 0.05em; }
+  .docks-wrapper { display: flex; gap: 24px; justify-content: center; align-items: flex-start; min-width: 600px; }
+  .dock-section { display: flex; flex-direction: column; align-items: center; }
+  .dock-label { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 600; color: var(--navy); margin-top: 10px; letter-spacing: 0.05em; }
+  .dock-column { display: flex; gap: 0; align-items: flex-start; }
+  .slip-col { display: flex; flex-direction: column; gap: 3px; }
+  .spine { width: 10px; border-radius: 4px; margin: 0 3px; flex-shrink: 0; }
+  .spine-fixed { background: var(--dock-fixed); }
+  .spine-float { background: var(--dock-float); }
+  .spine-split { width: 10px; margin: 0 3px; flex-shrink: 0; border-radius: 4px; overflow: hidden; display: flex; flex-direction: column; }
+  .slip-wrap { position: relative; }
+  .slip {
+    width: 44px; height: 20px; border-radius: 3px; border: 1.5px solid;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 600; cursor: default;
+    transition: transform 0.1s, box-shadow 0.1s; position: relative;
+  }
+  .slip:hover { transform: scale(1.18); z-index: 10; box-shadow: 0 4px 14px rgba(0,0,0,0.22); }
+  .slip.available { background: var(--available-bg); border-color: var(--available-border); color: var(--available); }
+  .slip.leased { background: var(--leased-bg); border-color: var(--leased-border); color: var(--leased); }
+  .slip-tooltip {
+    display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    background: var(--navy); color: #fff; padding: 8px 12px; border-radius: 7px;
+    font-size: 11px; white-space: nowrap; z-index: 100; pointer-events: none;
+    font-family: 'Source Sans 3', sans-serif; font-weight: 400; line-height: 1.6; text-align: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+  .slip:hover .slip-tooltip { display: block; }
+  .tooltip-id { font-weight: 700; font-size: 12px; color: #7ec8e3; }
+  .tooltip-status-available { color: #4ade80; font-weight: 600; }
+  .tooltip-status-leased { color: #f87171; font-weight: 600; }
+  .tooltip-expiry { color: #fbbf24; font-size: 10px; margin-top: 1px; }
+  .shallow-tag { font-size: 7px; color: #92400e; text-align: center; margin-top: 1px; font-weight: 600; letter-spacing: 0.04em; }
+  .launch-box { width: 44px; height: 20px; border-radius: 3px; border: 1.5px solid #0369a1; background: #e0f2fe; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 600; color: #0369a1; }
+  .filter-bar { display: flex; gap: 8px; padding: 12px 32px; background: rgba(255,255,255,0.5); border-bottom: 1px solid rgba(15,41,66,0.08); flex-wrap: wrap; align-items: center; }
+  .filter-label { font-size: 11px; font-weight: 600; color: var(--navy); text-transform: uppercase; letter-spacing: 0.06em; }
+  .filter-btn { padding: 4px 14px; border-radius: 20px; border: 1.5px solid; background: transparent; cursor: pointer; font-size: 12px; font-family: 'Source Sans 3', sans-serif; font-weight: 600; transition: all 0.15s; }
+  .filter-btn.all { border-color: var(--navy); color: var(--navy); }
+  .filter-btn.all.active, .filter-btn.all:hover { background: var(--navy); color: #fff; }
+  .filter-btn.avail { border-color: var(--available-border); color: var(--available); }
+  .filter-btn.avail.active, .filter-btn.avail:hover { background: var(--available-bg); }
+  .filter-btn.leased-f { border-color: var(--leased-border); color: var(--leased); }
+  .filter-btn.leased-f.active, .filter-btn.leased-f:hover { background: var(--leased-bg); }
+  .cta-bar { background: var(--navy); padding: 16px 32px; text-align: center; }
+  .cta-bar p { font-size: 13px; color: #94a3b8; }
+  .cta-bar a { color: #7ec8e3; text-decoration: none; font-weight: 600; }
+  .cta-bar a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
 
+<header>
+  <div>
+    <h1>⚓ Fawn Lake Marina</h1>
+    <p>Boat Slip Availability</p>
+  </div>
+  <div class="last-updated" id="lastUpdated"></div>
+</header>
+
+<div class="stats-bar">
+  <div class="stat total"><div class="stat-num" id="statTotal">—</div><div class="stat-label">Total Slips</div></div>
+  <div class="stat available"><div class="stat-num" id="statAvail">—</div><div class="stat-label">Available</div></div>
+  <div class="stat leased"><div class="stat-num" id="statLeased">—</div><div class="stat-label">Leased</div></div>
+</div>
+
+<div class="filter-bar">
+  <span class="filter-label">Show:</span>
+  <button class="filter-btn all active" onclick="setFilter('all', this)">All Slips</button>
+  <button class="filter-btn avail" onclick="setFilter('available', this)">Available Only</button>
+  <button class="filter-btn leased-f" onclick="setFilter('leased', this)">Leased Only</button>
+</div>
+
+<div class="legend">
+  <span class="legend-title">Legend:</span>
+  <div class="legend-item"><div class="legend-swatch" style="background:#dcfce7;border-color:#16a34a;"></div> Available</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#fee2e2;border-color:#dc2626;"></div> Leased</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#fff7ed;border-color:#ea580c;"></div> Fixed Dock</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#fefce8;border-color:#ca8a04;"></div> Fixed Shallow</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#f0fdf4;border-color:#16a34a;"></div> Floating Dock</div>
+  <div class="legend-item" style="margin-left:auto;font-size:11px;color:#6b7280;">Hover over any slip for details</div>
+</div>
+
+<div class="marina-container">
+  <div class="marina-title">Marina Boat Slips</div>
+  <div class="marina-subtitle">Not to Scale</div>
+  <div class="docks-wrapper" id="docksWrapper"></div>
+</div>
+
+<div class="cta-bar">
+  <p>Interested in a boat slip? <a href="mailto:info@e-landmarc.com">Contact our office</a> to join the waitlist.</p>
+</div>
+
+<script>
+const SLIP_DATA = [
+  {id:"A-1",dock:"A",num:1,type:"Fixed",status:"Leased",name:"Hendersen",leaseEnd:"03/01/2027"},
+  {id:"A-2",dock:"A",num:2,type:"Fixed",status:"Leased",name:"McCormick",leaseEnd:""},
+  {id:"A-3",dock:"A",num:3,type:"Fixed",status:"Leased",name:"Gauvin",leaseEnd:"12/31/2026"},
+  {id:"A-4",dock:"A",num:4,type:"Fixed",status:"Leased",name:"Zediker",leaseEnd:""},
+  {id:"A-5",dock:"A",num:5,type:"Fixed",status:"Leased",name:"Hagan",leaseEnd:"12/31/2026"},
+  {id:"A-6",dock:"A",num:6,type:"Fixed",status:"Leased",name:"Griffin",leaseEnd:"12/31/2026"},
+  {id:"A-7",dock:"A",num:7,type:"Fixed",status:"Leased",name:"Duren",leaseEnd:"12/31/2026"},
+  {id:"A-8",dock:"A",num:8,type:"Fixed",status:"Leased",name:"Gabeler",leaseEnd:"02/17/2027"},
+  {id:"A-9",dock:"A",num:9,type:"Fixed",status:"Leased",name:"Moore",leaseEnd:"12/31/2026"},
+  {id:"A-10",dock:"A",num:10,type:"Fixed",status:"Leased",name:"Vyverberg",leaseEnd:"02/17/2027"},
+  {id:"A-11",dock:"A",num:11,type:"Fixed",status:"Leased",name:"Scheer",leaseEnd:"12/31/2026"},
+  {id:"A-12",dock:"A",num:12,type:"Fixed",status:"Leased",name:"Schwartzman",leaseEnd:"02/17/2027"},
+  {id:"A-13",dock:"A",num:13,type:"Floating",status:"Leased",name:"Betz",leaseEnd:"12/31/2026"},
+  {id:"A-14",dock:"A",num:14,type:"Floating",status:"Leased",name:"Hoover",leaseEnd:"12/31/2026"},
+  {id:"A-15",dock:"A",num:15,type:"Floating",status:"Leased",name:"Spruill",leaseEnd:"12/31/2026"},
+  {id:"A-16",dock:"A",num:16,type:"Floating",status:"Leased",name:"Heck",leaseEnd:"12/31/2026"},
+  {id:"A-17",dock:"A",num:17,type:"Floating",status:"Leased",name:"Scriber",leaseEnd:""},
+  {id:"A-18",dock:"A",num:18,type:"Floating",status:"Leased",name:"Robinson",leaseEnd:"12/31/2026"},
+  {id:"A-19",dock:"A",num:19,type:"Floating",status:"Leased",name:"DeTroia",leaseEnd:"12/31/2026"},
+  {id:"A-20",dock:"A",num:20,type:"Floating",status:"Leased",name:"Lusby",leaseEnd:"02/17/2027"},
+  {id:"A-21",dock:"A",num:21,type:"Floating",status:"Leased",name:"MacDowell",leaseEnd:"12/31/2026"},
+  {id:"A-22",dock:"A",num:22,type:"Floating",status:"Leased",name:"Ritter",leaseEnd:"12/31/2026"},
+  {id:"A-23",dock:"A",num:23,type:"Floating",status:"Leased",name:"Enos",leaseEnd:"12/31/2026"},
+  {id:"A-24",dock:"A",num:24,type:"Floating",status:"Leased",name:"Sherman",leaseEnd:""},
+  {id:"A-25",dock:"A",num:25,type:"Floating",status:"Leased",name:"Doss",leaseEnd:"12/31/2026"},
+  {id:"A-26",dock:"A",num:26,type:"Floating",status:"Leased",name:"Welford",leaseEnd:"12/31/2026"},
+  {id:"B-1",dock:"B",num:1,type:"Fixed",status:"Leased",name:"Glakas",leaseEnd:"03/01/2027"},
+  {id:"B-2",dock:"B",num:2,type:"Fixed",status:"Leased",name:"Genaille",leaseEnd:"12/31/2026"},
+  {id:"B-3",dock:"B",num:3,type:"Fixed",status:"Leased",name:"Roger Miller",leaseEnd:"12/31/2026"},
+  {id:"B-4",dock:"B",num:4,type:"Fixed",status:"Leased",name:"Hankinson",leaseEnd:"12/31/2026"},
+  {id:"B-5",dock:"B",num:5,type:"Fixed",status:"Leased",name:"Lowe",leaseEnd:"02/17/2027"},
+  {id:"B-6",dock:"B",num:6,type:"Fixed",status:"Leased",name:"Curry",leaseEnd:"12/31/2026"},
+  {id:"B-7",dock:"B",num:7,type:"Fixed",status:"Leased",name:"Ferrara",leaseEnd:""},
+  {id:"B-8",dock:"B",num:8,type:"Fixed",status:"Leased",name:"Ko",leaseEnd:""},
+  {id:"B-9",dock:"B",num:9,type:"Fixed",status:"Leased",name:"Seay",leaseEnd:""},
+  {id:"B-10",dock:"B",num:10,type:"Fixed",status:"Leased",name:"Kelly",leaseEnd:"12/31/2026"},
+  {id:"B-11",dock:"B",num:11,type:"Fixed",status:"Leased",name:"Lachniet",leaseEnd:"12/31/2026"},
+  {id:"B-12",dock:"B",num:12,type:"Fixed",status:"Leased",name:"Schoen",leaseEnd:"12/31/2026"},
+  {id:"B-13",dock:"B",num:13,type:"Floating",status:"Leased",name:"Johnson",leaseEnd:"12/31/2026"},
+  {id:"B-14",dock:"B",num:14,type:"Floating",status:"Leased",name:"Colletti",leaseEnd:"03/01/2027"},
+  {id:"B-15",dock:"B",num:15,type:"Floating",status:"Leased",name:"Del Monte",leaseEnd:"02/17/2027"},
+  {id:"B-16",dock:"B",num:16,type:"Floating",status:"Leased",name:"Dayney",leaseEnd:""},
+  {id:"B-17",dock:"B",num:17,type:"Floating",status:"Leased",name:"Thad Williams",leaseEnd:"12/31/2026"},
+  {id:"B-18",dock:"B",num:18,type:"Floating",status:"Leased",name:"Cheng",leaseEnd:""},
+  {id:"B-19",dock:"B",num:19,type:"Floating",status:"Leased",name:"Sicari",leaseEnd:"12/31/2026"},
+  {id:"B-20",dock:"B",num:20,type:"Floating",status:"Leased",name:"McGrath",leaseEnd:"12/31/2026"},
+  {id:"B-21",dock:"B",num:21,type:"Floating",status:"Leased",name:"Dorsett",leaseEnd:"02/17/2027"},
+  {id:"B-22",dock:"B",num:22,type:"Floating",status:"Leased",name:"Hood",leaseEnd:"12/31/2026"},
+  {id:"C-1",dock:"C",num:1,type:"Floating",status:"Leased",name:"Alexander",leaseEnd:"12/31/2026"},
+  {id:"C-2",dock:"C",num:2,type:"Fixed Shallow",status:"Available",name:"",leaseEnd:""},
+  {id:"C-3",dock:"C",num:3,type:"Floating",status:"Leased",name:"Preisdendanz",leaseEnd:"12/31/2026"},
+  {id:"C-4",dock:"C",num:4,type:"Floating",status:"Leased",name:"Gregorson",leaseEnd:""},
+  {id:"C-5",dock:"C",num:5,type:"Floating",status:"Leased",name:"Kim Williams",leaseEnd:"12/31/2026"},
+  {id:"C-6",dock:"C",num:6,type:"Floating",status:"Leased",name:"King",leaseEnd:"12/31/2026"},
+  {id:"C-7",dock:"C",num:7,type:"Floating",status:"Leased",name:"Basso",leaseEnd:"12/31/2026"},
+  {id:"C-8",dock:"C",num:8,type:"Floating",status:"Leased",name:"Hill",leaseEnd:"02/17/2027"},
+  {id:"C-9",dock:"C",num:9,type:"Floating",status:"Leased",name:"Kirchmier",leaseEnd:"12/31/2026"},
+  {id:"C-10",dock:"C",num:10,type:"Floating",status:"Leased",name:"Delbecq",leaseEnd:"12/31/2026"},
+  {id:"C-11",dock:"C",num:11,type:"Floating",status:"Leased",name:"Neuhart",leaseEnd:""},
+  {id:"C-12",dock:"C",num:12,type:"Floating",status:"Leased",name:"Deavel",leaseEnd:"02/17/2027"},
+  {id:"C-13",dock:"C",num:13,type:"Floating",status:"Leased",name:"Shirilla",leaseEnd:""},
+  {id:"C-14",dock:"C",num:14,type:"Floating",status:"Leased",name:"Klimtzak",leaseEnd:"12/31/2026"},
+  {id:"C-15",dock:"C",num:15,type:"Floating",status:"Leased",name:"DeGallery",leaseEnd:"12/31/2026"},
+  {id:"C-16",dock:"C",num:16,type:"Floating",status:"Leased",name:"McNally",leaseEnd:"12/31/2026"},
+  {id:"C-17",dock:"C",num:17,type:"Floating",status:"Leased",name:"Bullock",leaseEnd:"12/31/2026"},
+  {id:"C-18",dock:"C",num:18,type:"Floating",status:"Leased",name:"McKenzie",leaseEnd:"03/10/2027"},
+  {id:"C-19",dock:"C",num:19,type:"Floating",status:"Leased",name:"Bosshart",leaseEnd:"12/31/2026"},
+  {id:"C-20",dock:"C",num:20,type:"Floating",status:"Leased",name:"Mueller",leaseEnd:"12/31/2026"},
+  {id:"C-21",dock:"C",num:21,type:"Floating",status:"Leased",name:"Burns",leaseEnd:"02/17/2027"},
+  {id:"C-22",dock:"C",num:22,type:"Floating",status:"Leased",name:"Fears/Nebiker",leaseEnd:"02/17/2027"},
+  {id:"C-23",dock:"C",num:23,type:"Floating",status:"Leased",name:"Terrell Williams",leaseEnd:"12/31/2026"},
+  {id:"C-24",dock:"C",num:24,type:"Floating",status:"Leased",name:"Bradshaw",leaseEnd:"12/31/2026"},
+  {id:"C-25",dock:"C",num:25,type:"Floating",status:"Leased",name:"Gatti",leaseEnd:"12/31/2026"},
+  {id:"C-26",dock:"C",num:26,type:"Floating",status:"Leased",name:"Keilty",leaseEnd:"12/31/2026"},
+  {id:"C-27",dock:"C",num:27,type:"Floating",status:"Leased",name:"Dungan",leaseEnd:"12/31/2026"},
+  {id:"C-28",dock:"C",num:28,type:"Floating",status:"Leased",name:"Thompson",leaseEnd:""},
+  {id:"D-0",dock:"D",num:0,type:"nan",status:"Available",name:"",leaseEnd:""},
+  {id:"D-1",dock:"D",num:1,type:"Fixed Shallow",status:"Leased",name:"Berrios",leaseEnd:""},
+  {id:"D-2",dock:"D",num:2,type:"Fixed Shallow",status:"Leased",name:"Grimes",leaseEnd:"03/10/2027"},
+  {id:"D-3",dock:"D",num:3,type:"Floating",status:"Leased",name:"Marshall",leaseEnd:""},
+  {id:"D-4",dock:"D",num:4,type:"Floating",status:"Leased",name:"Montefiori",leaseEnd:""},
+  {id:"D-5",dock:"D",num:5,type:"Floating",status:"Leased",name:"Geraghty",leaseEnd:""},
+  {id:"D-6",dock:"D",num:6,type:"Floating",status:"Leased",name:"Riggs",leaseEnd:""},
+  {id:"D-7",dock:"D",num:7,type:"Floating",status:"Leased",name:"Grant",leaseEnd:""},
+  {id:"D-8",dock:"D",num:8,type:"Floating",status:"Leased",name:"Wilger",leaseEnd:""},
+  {id:"D-9",dock:"D",num:9,type:"Floating",status:"Leased",name:"Beall",leaseEnd:""},
+  {id:"D-10",dock:"D",num:10,type:"Floating",status:"Available",name:"",leaseEnd:""},
+  {id:"D-11",dock:"D",num:11,type:"Floating",status:"Leased",name:"Davis",leaseEnd:""},
+  {id:"D-12",dock:"D",num:12,type:"Floating",status:"Leased",name:"Niewenhous",leaseEnd:""},
+  {id:"D-13",dock:"D",num:13,type:"Floating",status:"Leased",name:"Richey/Josa",leaseEnd:""},
+  {id:"D-14",dock:"D",num:14,type:"Floating",status:"Leased",name:"Reuter",leaseEnd:""},
+  {id:"D-15",dock:"D",num:15,type:"Floating",status:"Leased",name:"Fiscko",leaseEnd:"02/17/2027"},
+  {id:"D-16",dock:"D",num:16,type:"Floating",status:"Leased",name:"Zachousky",leaseEnd:""},
+  {id:"D-17",dock:"D",num:17,type:"Floating",status:"Leased",name:"Tucker",leaseEnd:""},
+  {id:"D-18",dock:"D",num:18,type:"Floating",status:"Leased",name:"Palucci",leaseEnd:""},
+  {id:"D-19",dock:"D",num:19,type:"Floating",status:"Leased",name:"Shortess",leaseEnd:"02/17/2027"},
+  {id:"D-20",dock:"D",num:20,type:"Floating",status:"Leased",name:"Tedesco",leaseEnd:""},
+  {id:"D-21",dock:"D",num:21,type:"Floating",status:"Leased",name:"Urcia",leaseEnd:"02/17/2027"},
+  {id:"D-22",dock:"D",num:22,type:"Floating",status:"Leased",name:"Streithof",leaseEnd:""},
+  {id:"D-23",dock:"D",num:23,type:"Floating",status:"Leased",name:"Jordan",leaseEnd:"02/17/2027"},
+  {id:"D-24",dock:"D",num:24,type:"Floating",status:"Leased",name:"Marino",leaseEnd:"12/31/2026"},
+  {id:"D-25",dock:"D",num:25,type:"Floating",status:"Leased",name:"Maxwell",leaseEnd:""},
+  {id:"D-26",dock:"D",num:26,type:"Floating",status:"Leased",name:"Anastasio",leaseEnd:""},
+  {id:"D-27",dock:"D",num:27,type:"Floating",status:"Leased",name:"Allison",leaseEnd:""},
+  {id:"E-1",dock:"E",num:1,type:"Floating",status:"Leased",name:"Kerley",leaseEnd:""},
+  {id:"E-2",dock:"E",num:2,type:"Floating",status:"Leased",name:"Richardson",leaseEnd:""},
+  {id:"E-3",dock:"E",num:3,type:"Floating",status:"Leased",name:"Hughes",leaseEnd:""},
+  {id:"E-4",dock:"E",num:4,type:"Floating",status:"Leased",name:"Phelps",leaseEnd:""},
+  {id:"E-5",dock:"E",num:5,type:"Floating",status:"Leased",name:"Patterson",leaseEnd:"03/01/2027"},
+  {id:"E-6",dock:"E",num:6,type:"Floating",status:"Leased",name:"Hefner",leaseEnd:""},
+  {id:"E-7",dock:"E",num:7,type:"Floating",status:"Leased",name:"Larimore",leaseEnd:""},
+  {id:"E-8",dock:"E",num:8,type:"Floating",status:"Leased",name:"Berkeley",leaseEnd:""},
+  {id:"E-9",dock:"E",num:9,type:"Floating",status:"Leased",name:"Hunter-Drayer",leaseEnd:""},
+  {id:"E-10",dock:"E",num:10,type:"Floating",status:"Leased",name:"Chacra",leaseEnd:"02/17/2027"},
+  {id:"E-11",dock:"E",num:11,type:"Floating",status:"Leased",name:"Plourde",leaseEnd:""},
+  {id:"E-12",dock:"E",num:12,type:"Floating",status:"Leased",name:"Bartoszek",leaseEnd:"02/17/2027"},
+  {id:"E-13",dock:"E",num:13,type:"Floating",status:"Leased",name:"Turner",leaseEnd:""},
+  {id:"E-14",dock:"E",num:14,type:"Floating",status:"Leased",name:"Espinel",leaseEnd:""},
+  {id:"E-15",dock:"E",num:15,type:"Floating",status:"Leased",name:"Frederick",leaseEnd:""},
+  {id:"E-16",dock:"E",num:16,type:"Floating",status:"Leased",name:"Daly",leaseEnd:""},
+  {id:"E-17",dock:"E",num:17,type:"Floating",status:"Leased",name:"Laughery",leaseEnd:""},
+  {id:"E-18",dock:"E",num:18,type:"Floating",status:"Leased",name:"Toney",leaseEnd:""},
+  {id:"E-19",dock:"E",num:19,type:"Floating",status:"Leased",name:"Velez",leaseEnd:"02/17/2027"},
+  {id:"E-20",dock:"E",num:20,type:"Floating",status:"Leased",name:"Paxson",leaseEnd:""},
+  {id:"E-21",dock:"E",num:21,type:"Floating",status:"Leased",name:"Spann",leaseEnd:""},
+  {id:"E-22",dock:"E",num:22,type:"Floating",status:"Leased",name:"Horstick",leaseEnd:""},
+  {id:"E-23",dock:"E",num:23,type:"Floating",status:"Leased",name:"Moore",leaseEnd:""},
+];
+
+const DOCKS = {
+  A: { total:26, fixedMax:14, shallowSet:new Set(), hasLaunch:false },
+  B: { total:22, fixedMax:10, shallowSet:new Set(), hasLaunch:false },
+  C: { total:28, fixedMax:0,  shallowSet:new Set([1,2]), hasLaunch:false },
+  D: { total:27, fixedMax:0,  shallowSet:new Set([1,2]), hasLaunch:true },
+  E: { total:23, fixedMax:0,  shallowSet:new Set([1]), hasLaunch:false },
+};
+
+let currentFilter = 'all';
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDocks();
+}
+
+function getSlip(id) { return SLIP_DATA.find(x => x.id === id) || null; }
+
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return null;
+  const d = new Date(parseInt(parts[2]), parseInt(parts[0])-1, parseInt(parts[1]));
+  return Math.ceil((d - new Date()) / (1000*60*60*24));
+}
+
+function buildSlip(dock, num, cfg) {
+  const id = `${dock}-${num}`;
+  const slip = getSlip(id);
+  const status = slip ? slip.status : 'Leased';
+  const stype = slip ? slip.type : 'Floating';
+  const name = slip ? slip.name : '';
+  const leaseEnd = slip ? slip.leaseEnd : '';
+  const days = daysUntil(leaseEnd);
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'slip-wrap';
+
+  if (currentFilter !== 'all' && status.toLowerCase() !== currentFilter) {
+    wrapper.style.cssText = 'width:44px;height:20px;';
+    return { el: wrapper, isShallow: stype === 'Fixed Shallow', status };
+  }
+
+  const slipEl = document.createElement('div');
+  slipEl.className = `slip ${status === 'Available' ? 'available' : 'leased'}`;
+  slipEl.textContent = num;
+
+  // Build tooltip
+  const tt = document.createElement('div');
+  tt.className = 'slip-tooltip';
+  let ttHTML = `<div class="tooltip-id">${id}</div><div>${stype}</div>`;
+  if (status === 'Available') {
+    ttHTML += `<div class="tooltip-status-available">✓ Available</div>`;
+  } else {
+    ttHTML += `<div class="tooltip-status-leased">Leased</div>`;
+    if (leaseEnd) {
+      let expiryClass = 'tooltip-expiry';
+      let expiryText = `Expires: ${leaseEnd}`;
+      if (days !== null) {
+        if (days < 0) expiryText += ' (EXPIRED)';
+        else if (days <= 30) expiryText += ` (${days}d — critical)`;
+        else if (days <= 60) expiryText += ` (${days}d — expiring soon)`;
+        else expiryText += ` (${days} days)`;
+      }
+      ttHTML += `<div class="${expiryClass}">${expiryText}</div>`;
+    } else {
+      ttHTML += `<div class="tooltip-expiry">Lease date: pending</div>`;
+    }
+  }
+  tt.innerHTML = ttHTML;
+  slipEl.appendChild(tt);
+  wrapper.appendChild(slipEl);
+  return { el: wrapper, isShallow: stype === 'Fixed Shallow', status };
+}
+
+function renderDocks() {
+  const wrapper = document.getElementById('docksWrapper');
+  wrapper.innerHTML = '';
+  let totalAvail = 0, totalLeased = 0, totalCount = 0;
+
+  Object.entries(DOCKS).forEach(([dockLetter, cfg]) => {
+    const section = document.createElement('div');
+    section.className = 'dock-section';
+    const colLeft = document.createElement('div'); colLeft.className = 'slip-col';
+    const colRight = document.createElement('div'); colRight.className = 'slip-col';
+
+    const rows = Math.ceil(cfg.total / 2);
+    const leftNums = [], rightNums = [];
+    for (let n = cfg.total; n >= 1; n--) {
+      if (n % 2 === 1) leftNums.push(n); else rightNums.push(n);
+    }
+    leftNums.sort((a,b) => b-a); rightNums.sort((a,b) => b-a);
+
+    const leftItems = [], rightItems = [];
+
+    leftNums.forEach(n => {
+      const {el, isShallow, status} = buildSlip(dockLetter, n, cfg);
+      if(status === 'Available') totalAvail++; else totalLeased++;
+      totalCount++;
+      const wrap = document.createElement('div');
+      wrap.appendChild(el);
+      if(isShallow) { const tag = document.createElement('div'); tag.className='shallow-tag'; tag.textContent='shallow'; wrap.appendChild(tag); }
+      leftItems.push(wrap);
+    });
+
+    rightNums.forEach(n => {
+      const {el, isShallow, status} = buildSlip(dockLetter, n, cfg);
+      const wrap = document.createElement('div');
+      wrap.appendChild(el);
+      if(isShallow) { const tag = document.createElement('div'); tag.className='shallow-tag'; tag.textContent='shallow'; wrap.appendChild(tag); }
+      rightItems.push(wrap);
+    });
+
+    if (cfg.hasLaunch) {
+      const lw = document.createElement('div');
+      const lb = document.createElement('div'); lb.className='launch-box'; lb.textContent='Launch';
+      lw.appendChild(lb); leftItems.push(lw);
+    }
+
+    while (rightItems.length < leftItems.length) {
+      const pad = document.createElement('div'); pad.style.cssText='width:44px;height:20px;'; rightItems.unshift(pad);
+    }
+
+    leftItems.forEach(el => colLeft.appendChild(el));
+    rightItems.forEach(el => colRight.appendChild(el));
+
+    const spineEl = document.createElement('div');
+    const spineH = rows * 23 + (cfg.hasLaunch ? 23 : 0);
+
+    if (dockLetter === 'A' || dockLetter === 'B') {
+      spineEl.className = 'spine-split'; spineEl.style.height = spineH + 'px';
+      const fixedRows = dockLetter==='A' ? 7 : 5;
+      const floatRows = rows - fixedRows;
+      const fp = document.createElement('div'); fp.style.cssText=`flex:${floatRows};background:var(--dock-float);`;
+      const xp = document.createElement('div'); xp.style.cssText=`flex:${fixedRows};background:var(--dock-fixed);`;
+      spineEl.appendChild(fp); spineEl.appendChild(xp);
+    } else {
+      spineEl.className = 'spine spine-float'; spineEl.style.height = spineH + 'px';
+    }
+
+    const dockRow = document.createElement('div'); dockRow.className='dock-column';
+    dockRow.appendChild(colLeft); dockRow.appendChild(spineEl); dockRow.appendChild(colRight);
+
+    const label = document.createElement('div'); label.className='dock-label'; label.textContent=dockLetter;
+    section.appendChild(dockRow); section.appendChild(label);
+    wrapper.appendChild(section);
+  });
+
+  document.getElementById('statAvail').textContent = totalAvail;
+  document.getElementById('statLeased').textContent = totalLeased;
+  document.getElementById('statTotal').textContent = totalCount;
+  document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+}
+
+renderDocks();
+</script>
+</body>
+</html>
